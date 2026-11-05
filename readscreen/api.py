@@ -65,6 +65,12 @@ class Api:
     def version(self) -> str:
         return __version__
 
+    def info(self) -> dict:
+        from .layout import PLATFORMS, STAGE_NAMES
+
+        return {"version": __version__, "data_dir": str(self.env.data_dir), "platforms": list(PLATFORMS),
+                "stages": list(STAGE_NAMES)}
+
     def stage_info(self, platform: str | None = None) -> list[dict]:
         return [
             {"index": i, "name": name, "params": params_mod.describe(mod.PARAMS, platform)}
@@ -102,6 +108,9 @@ class Api:
     def get_settings(self) -> dict:
         with self._db() as conn:
             return settings_mod.get_all(conn)
+
+    def settings_schema(self) -> list[dict]:
+        return params_mod.describe(settings_mod.SETTINGS, None)
 
     def set_setting(self, key: str, value: Any) -> Any:
         with self._db() as conn:
@@ -249,7 +258,8 @@ class Api:
         w = csv.writer(buf, delimiter="\t", lineterminator="\n")
         w.writerow(cols)
         for r in res["references"]:
-            w.writerow([",".join(r[c]) if c == "flags" else ("" if r.get(c) is None else r.get(c)) for c in cols])
+            w.writerow([",".join(r.get("flags") or []) if c == "flags" else ("" if r.get(c) is None else r.get(c))
+                        for c in cols])
         return buf.getvalue()
 
     # ------------------------------------------------------------------ worker
@@ -267,3 +277,77 @@ class Api:
     def find_mate(self, path: str) -> str | None:
         mate = pairs.find_mate(path)
         return str(mate) if mate else None
+
+    def suggest_inputs(self, path: str) -> dict:
+        """For a chosen read file: its mate role, the mate file if it exists, a default job name."""
+        role = pairs.mate_role(path)
+        mate = pairs.find_mate(path)
+        r1 = str(mate) if (mate and role == "r2") else path
+        return {"role": role, "mate": str(mate) if mate else None, "name": jobs.default_name(r1)}
+
+    def fs_roots(self) -> list[dict]:
+        roots = []
+        if os.name == "nt":
+            import ctypes
+            import string
+
+            mask = ctypes.windll.kernel32.GetLogicalDrives()
+            roots += [{"name": f"{c}:", "path": f"{c}:\\"} for i, c in enumerate(string.ascii_uppercase) if mask >> i & 1]
+        else:
+            roots.append({"name": "/", "path": "/"})
+        roots.append({"name": "home", "path": str(Path.home())})
+        return roots
+
+    def browse(self, path: str | None = None, show_hidden: bool = False, limit: int = 5000) -> dict:
+        """Directory listing for the file picker. Without a path: the roots (drives, home)."""
+        roots = self.fs_roots()
+        if not path:
+            return {"path": None, "parent": None, "roots": roots, "truncated": False,
+                    "entries": [{"name": r["name"], "path": r["path"], "type": "dir"} for r in roots]}
+        p = Path(path).expanduser()
+        if not p.is_absolute():
+            raise ApiError(f"not an absolute path: {path}")
+        if p.is_file():
+            p = p.parent
+        if not p.is_dir():
+            raise ApiError(f"folder not found: {p}", "not_found")
+        entries = []
+        try:
+            with os.scandir(p) as it:
+                for e in it:
+                    if not show_hidden and e.name.startswith("."):
+                        continue
+                    try:
+                        is_dir = e.is_dir()
+                        st = None if is_dir else e.stat()
+                    except OSError:
+                        continue
+                    entries.append({
+                        "name": e.name,
+                        "path": str(p / e.name),
+                        "type": "dir" if is_dir else "file",
+                        "kind": None if is_dir else _file_kind(e.name),
+                        "size": None if st is None else st.st_size,
+                        "mtime": None if st is None else st.st_mtime,
+                    })
+        except PermissionError:
+            raise ApiError(f"permission denied: {p}") from None
+        except OSError as exc:
+            raise ApiError(f"cannot read {p}: {exc}") from None
+        entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
+        parent = str(p.parent) if p.parent != p else None
+        return {"path": str(p), "parent": parent, "roots": roots, "truncated": len(entries) > limit,
+                "entries": entries[:limit]}
+
+
+_FASTQ = (".fastq", ".fq", ".fastq.gz", ".fq.gz", ".fastq.bz2", ".fq.bz2")
+_FASTA = (".fa", ".fasta", ".fna", ".fas", ".fa.gz", ".fasta.gz", ".fna.gz")
+
+
+def _file_kind(name: str) -> str | None:
+    lower = name.lower()
+    if lower.endswith(_FASTQ):
+        return "fastq"
+    if lower.endswith(_FASTA):
+        return "fasta"
+    return None

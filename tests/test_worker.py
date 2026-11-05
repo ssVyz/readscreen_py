@@ -96,6 +96,13 @@ class FlowTest(WorkerCase):
         self.assertFalse(list(layout.job_dir(self.env, jid).glob("*.tmp")))
         self.assertFalse(self.api.worker_status()["running"])
 
+    def test_idle_worker_reports_no_job(self):
+        jid = self.create()
+        self.start_worker(fake_stages(), exit_when_empty=False)
+        self.wait_for(lambda: self.api.get_job(jid)["status"] == "done")
+        self.wait_for(lambda: self.api.worker_status()["job_id"] is None)
+        self.assertTrue(self.api.worker_status()["running"])
+
     def test_queue_order(self):
         a, b = self.create(), self.create()
         order = []

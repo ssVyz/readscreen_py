@@ -274,7 +274,9 @@ class Worker:
                         break
                     self._sleep(self.poll if self.poll is not None else float(settings_mod.get_all(self.conn)["poll_interval"]))
                     continue
-                if self._process(job_id) == "stop":
+                outcome = self._process(job_id)
+                self.conn.execute("UPDATE worker SET job_id = NULL, stage = NULL WHERE id = 1")
+                if outcome == "stop":
                     break
             log.info("worker stopped")
             return 0

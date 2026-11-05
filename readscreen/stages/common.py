@@ -154,7 +154,7 @@ def check_reserved(args: list[str], reserved: tuple[str, ...], stage: str) -> No
     for a in args:
         for r in reserved:
             if a == r or a.startswith(r + "="):
-                raise StageError(f"{stage}: extra argument {a} is set by readscreen and not allowed")
+                raise StageError(f"extra argument {a} is set by readscreen and not allowed ({stage}.extra_args)")
 
 
 def blast_db_dir(settings: dict) -> Path:

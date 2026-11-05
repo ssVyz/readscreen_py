@@ -286,6 +286,12 @@ def cmd_worker(api: Api, args) -> int:
     return 0
 
 
+def cmd_serve(api: Api, args) -> int:
+    from .web.server import serve
+
+    return serve(api, args.host, args.port, open_browser=args.open)
+
+
 def cmd_settings(api: Api, args) -> int:
     if args.action == "set":
         print(api.set_setting(args.key, args.value))
@@ -401,6 +407,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--now", action="store_true", help="stop: kill the running tool instead of finishing the stage")
     p.add_argument("--wait", type=float, default=0.0, help="stop: wait up to this many seconds")
     p.set_defaults(func=cmd_worker)
+
+    p = sub.add_parser("serve", help="start the web interface")
+    p.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1)")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--open", action="store_true", help="open the browser")
+    p.set_defaults(func=cmd_serve)
 
     p = sub.add_parser("settings", help="show or change settings")
     p.add_argument("action", nargs="?", choices=("list", "set", "unset"), default="list")

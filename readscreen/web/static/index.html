@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>readscreen</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='9' width='3' height='6' rx='1' fill='%232a78d6'/%3E%3Crect x='6.5' y='4' width='3' height='11' rx='1' fill='%232a78d6'/%3E%3Crect x='12' y='7' width='3' height='8' rx='1' fill='%232a78d6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/">readscreen</a>
+    <nav class="nav">
+      <a href="#/" data-nav="jobs">Jobs</a>
+      <a href="#/new" data-nav="new">New job</a>
+      <a href="#/settings" data-nav="settings">Settings</a>
+    </nav>
+    <a class="worker-pill" id="worker-pill" href="#/" title="Worker status">
+      <span class="dot"></span><span class="label">Worker</span>
+    </a>
+  </header>
+  <main id="view" class="page" tabindex="-1"></main>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -4,7 +4,16 @@ Orchestrator, data layer and frontend for a metagenomic read screening pipeline:
 (simpletrim), assembly (shortread_assembler), BLAST against a reference database, ranking of the
 hits, mapping (minimap2) and coverage reports. Python 3.10+, standard library only.
 
-Status: backend, worker and CLI (phase 1). The web interface follows in phase 2.
+Status: backend, worker, CLI and web interface (phases 1 and 2). Tested on Windows; Linux follows.
+
+## Quick start (web)
+
+```sh
+python main.py serve --open                         # http://localhost:8765/ (only reachable from this machine)
+```
+
+Start the worker on the Jobs page, then create a job with "New job". Over SSH, forward the port
+(`ssh -L 8765:localhost:8765 host`) and open the same address locally.
 
 ## Quick start (CLI)
 

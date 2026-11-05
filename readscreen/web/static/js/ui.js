@@ -236,9 +236,9 @@ export function callout(kind, title, ...body) {
     h('div', { class: 'body' }, title ? h('strong', {}, title) : null, body.length ? h('div', {}, body) : null));
 }
 
-export function meter(fraction) {
+export function meter(fraction, wide = false) {
   const pct = Math.max(0, Math.min(1, fraction || 0)) * 100;
-  return h('span', { class: 'meter', 'aria-hidden': 'true' }, h('span', { style: { width: `${pct}%` } }));
+  return h('span', { class: wide ? 'meter wide' : 'meter', 'aria-hidden': 'true' }, h('span', { style: { width: `${pct}%` } }));
 }
 
 // ------------------------------------------------------------------ live views

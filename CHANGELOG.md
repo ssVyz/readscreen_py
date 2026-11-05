@@ -3,6 +3,31 @@
 All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning: [SemVer](https://semver.org/).
 
+## [0.0.4] - 2026-11-05
+
+### Added
+- Download of the RefSeq viral reference genomes (`ref_viruses_rep_genomes`, with NCBI's taxonomy files) from
+  NCBI: standard library only, resumable, md5-checked, tested with `blastdbcmd` before it is installed. Runs as its
+  own background process (one at a time) with progress, cancel and error reporting.
+  - CLI: `dbs check` (installed vs. NCBI version), `dbs download [--background] [--force]`, `dbs status`,
+    `dbs cancel`.
+  - Settings page: "Download from NCBI" card with versions, download/update, progress and cancel; the new-job
+    page links there when no database is installed.
+  - Setting `download_url` (NCBI or a mirror).
+- Updating a database does not disturb running jobs: the folder swap waits until no job is in the blast or extract
+  stage, and those stages wait while a swap is pending.
+- The blast stage records the database version (shown on the job page and written to `result.json`); extract notes
+  when the database was updated after blast.
+- Tests for the download against a local fake NCBI server (resume, checksum, unsafe archives, cancel, waiting for
+  the worker); `READSCREEN_NET=1` adds a check of NCBI's real metadata files.
+
+### Changed
+- DB schema version 2 (new `download` table); older databases are upgraded automatically.
+- A worker stop request ("now" as well as graceful) is honoured between stages, before the next stage starts.
+
+### Fixed
+- Saving settings clears the web server's cached database list (a changed `blast_db_dir` showed up only after 30 s).
+
 ## [0.0.3] - 2026-11-05
 
 Phase 2 of `implementation_plan.md`: web server and frontend.

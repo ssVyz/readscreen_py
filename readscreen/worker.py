@@ -24,6 +24,10 @@ from .stages.common import PauseRequest, StageContext, StageError
 
 log = logging.getLogger("readscreen.worker")
 
+# Stages that read the BLAST database folder. They do not start while a database download is
+# swapping in a new version, and the download waits until none of them is running (see refdb).
+DB_STAGES = ("blast", "extract")
+
 
 class AlreadyRunning(RuntimeError):
     """Another worker holds the lock."""
@@ -235,6 +239,37 @@ class Worker:
         finally:
             conn.close()
 
+    def _install_pending(self) -> bool:
+        """A database download is installing a new version (and its process is still alive)."""
+        row = self.conn.execute("SELECT installing FROM download WHERE id = 1").fetchone()
+        if row is None or not row["installing"]:
+            return False
+        lock = WorkerLock(self.env.download_lock_path)
+        if lock.acquire():  # no download process holds the lock: a leftover flag
+            lock.release()
+            return False
+        return True
+
+    def _enter_stage(self, job_id: int, name: str) -> bool:
+        """Record the stage in the worker row; False if the job was stopped while waiting.
+
+        A stage in DB_STAGES waits while a database update is being installed. The check and the
+        update run in one transaction, so they cannot interleave with the download's own check.
+        """
+        waiting = False
+        while True:
+            with store.transaction(self.conn):
+                if name not in DB_STAGES or not self._install_pending():
+                    self.conn.execute("UPDATE worker SET job_id = ?, stage = ? WHERE id = 1", (job_id, name))
+                    return True
+            if not waiting:
+                log.info("job %s: stage %s waits for the database update to finish", job_id, name)
+                waiting = True
+            job = jobs.job_row(self.conn, job_id)
+            if self._stop_request() or job["cancel_request"] or job["delete_request"]:
+                return False
+            time.sleep(0.5)
+
     def _sleep(self, seconds: float) -> None:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
@@ -293,7 +328,7 @@ class Worker:
         conn, env = self.conn, self.env
         log.info("job %s: started", job_id)
         while True:
-            if self._stop_request() == "graceful":
+            if self._stop_request():
                 jobs.set_status(conn, job_id, "queued")
                 log.info("job %s: back in the queue (worker stop)", job_id)
                 return "stop"
@@ -316,13 +351,14 @@ class Worker:
             if getattr(mod, "is_skipped", None) and mod.is_skipped(params):
                 jobs.stage_finished(conn, job_id, name, "skipped", None)
                 continue
+            if not self._enter_stage(job_id, name):
+                continue  # stopped, cancelled or deleted while waiting: handled at the top
             tmp = layout.stage_tmp(env, job_id, name)
             final = layout.stage_dir(env, job_id, name)
             layout.safe_rmtree(env, tmp)
             layout.safe_rmtree(env, final)
             tmp.mkdir(parents=True)
             jobs.stage_started(conn, job_id, name)
-            conn.execute("UPDATE worker SET job_id = ?, stage = ? WHERE id = 1", (job_id, name))
             values = settings_mod.get_all(conn)
             ctx = StageContext(env, conn, job, name, params, tmp, values,
                                cancel_check=lambda: self._cancelled(job_id), on_tool=self._set_tool)

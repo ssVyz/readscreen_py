@@ -141,6 +141,21 @@ class ApiRoutesTest(WebCase):
         _, res, _ = self.call("POST", "/api/worker/stop")
         self.assertEqual(res["result"], "not_running")
 
+    def test_download_routes(self):
+        self.call("GET", "/api/dbs")  # fills the server's database list cache
+        self.call("PUT", "/api/settings", {"blast_db_dir": str(self.tmp / "blast_db")})
+        self.assertEqual(self.call("GET", "/api/dbs")[1], [])  # saving settings clears the cache
+        status, sources, _ = self.call("GET", "/api/dbs/sources")
+        self.assertEqual(status, 200)
+        self.assertEqual((sources[0]["name"], sources[0]["installed"]), ("ref_viruses_rep_genomes", None))
+        self.assertNotIn("remote", sources[0])  # NCBI is only asked with ?remote=1
+        status, st, _ = self.call("GET", "/api/dbs/download")
+        self.assertEqual((status, st["running"], st["state"]), (200, False, None))
+        _, res, _ = self.call("POST", "/api/dbs/download/cancel")
+        self.assertEqual(res, {"cancelled": False})
+        status, err, _ = self.call("POST", "/api/dbs/download", {"name": "nt"})
+        self.assertEqual((status, err["code"]), (400, "invalid"))
+
     def test_unknown_and_wrong_method(self):
         self.assertEqual(self.call("GET", "/api/nope")[0], 404)
         self.assertEqual(self.call("DELETE", "/api/jobs")[0], 405)

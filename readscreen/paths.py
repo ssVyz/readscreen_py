@@ -55,6 +55,10 @@ class Env:
         return self.data_dir / "db" / "worker.lock"
 
     @property
+    def download_lock_path(self) -> Path:
+        return self.data_dir / "db" / "download.lock"
+
+    @property
     def jobs_dir(self) -> Path:
         return self.data_dir / "jobs"
 

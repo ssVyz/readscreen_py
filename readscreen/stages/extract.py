@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..logic.fastx import iter_fasta
 from ..params import Schema
-from .common import StageContext, StageError, resolve_db
+from .common import StageContext, StageError, describe_db, read_db_metadata, resolve_db
 
 PARAMS: Schema = {}
 
@@ -17,7 +17,15 @@ def run(ctx: StageContext) -> dict:
         out.write_text("")
         ctx.log("no references selected")
         return {"references": 0, "bases": 0, "missing": []}
-    db = resolve_db(ctx.settings, ctx.stage_row("blast")["params"].get("db"))
+    blast = ctx.stage_row("blast")
+    db = resolve_db(ctx.settings, blast["params"].get("db"))
+    used = (blast["summary"].get("database") or {}).get("updated")
+    now = describe_db(read_db_metadata(ctx.tool("blastdbcmd"), db))["updated"]
+    changed = bool(used and now and used != now)
+    if changed:
+        # accession.version identifiers do not change their sequence, so the extraction stays valid;
+        # references removed from the new version are reported as missing
+        ctx.log(f"note: the database was updated after the blast stage ({used} -> {now})")
     batch = ctx.out_dir / "selected.txt"
     batch.write_text("".join(r + "\n" for r in refs), encoding="utf-8")
     ctx.run_tool(
@@ -28,4 +36,7 @@ def run(ctx: StageContext) -> dict:
     if not got:
         raise StageError("blastdbcmd returned no sequences for the selected references")
     missing = [r for r in refs if r not in got and r.split(".")[0] not in {g.split(".")[0] for g in got}]
-    return {"references": len(got), "bases": sum(got.values()), "missing": missing}
+    summary = {"references": len(got), "bases": sum(got.values()), "missing": missing}
+    if changed:
+        summary["database_changed"] = {"blast": used, "extract": now}
+    return summary

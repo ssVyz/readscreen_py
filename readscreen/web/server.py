@@ -102,6 +102,28 @@ def _dbs(r: Request):
         return _DB_CACHE["data"]
 
 
+@route("GET", r"/api/dbs/sources")
+def _db_sources(r: Request):
+    remote = _flag(r.query.get("remote", ""))
+    max_age = 0.0 if _flag(r.query.get("refresh", "")) else 600.0
+    return r.api.db_sources(remote=remote, max_age=max_age)
+
+
+@route("GET", r"/api/dbs/download")
+def _download_status(r: Request):
+    return r.api.download_status()
+
+
+@route("POST", r"/api/dbs/download")
+def _download_start(r: Request):
+    return {"pid": r.api.start_download(r.arg("name") or None)}
+
+
+@route("POST", r"/api/dbs/download/cancel")
+def _download_cancel(r: Request):
+    return {"cancelled": r.api.cancel_download()}
+
+
 @route("GET", r"/api/settings")
 def _settings(r: Request):
     return r.api.get_settings()
@@ -118,6 +140,8 @@ def _set_settings(r: Request):
         raise ApiError("expected an object of settings")
     for key, value in r.body.items():
         r.api.set_setting(key, value)
+    with _DB_LOCK:
+        _DB_CACHE["data"] = None  # blast_db_dir may have changed
     return r.api.get_settings()
 
 

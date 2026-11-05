@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -170,6 +173,35 @@ def resolve_db(settings: dict, value: str | None) -> Path:
     if not any(base.parent.glob(base.name + ".*")):
         raise StageError(f"BLAST database not found: {base}")
     return base
+
+
+def read_db_metadata(blastdbcmd: Path, db: Path) -> dict | None:
+    """`blastdbcmd -metadata` of a database (None if it cannot be read)."""
+    try:
+        proc = subprocess.run(
+            [str(blastdbcmd), "-db", str(db), "-metadata"], capture_output=True, text=True, timeout=120,
+            env={**os.environ, "BLASTDB": str(db.parent)},
+            creationflags=runner.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        return json.loads(proc.stdout)
+    except ValueError:
+        return None
+
+
+def describe_db(metadata: dict | None) -> dict:
+    """The parts of `blastdbcmd -metadata` that readscreen shows and records with the results."""
+    metadata = metadata or {}
+    return {
+        "title": metadata.get("description"),
+        "updated": str(metadata.get("last-updated") or "")[:10] or None,
+        "sequences": metadata.get("number-of-sequences"),
+        "letters": metadata.get("number-of-letters"),
+    }
 
 
 def count_lines(path: Path) -> int:

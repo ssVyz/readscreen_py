@@ -8,7 +8,7 @@ import sys
 import time
 from datetime import datetime
 
-from . import __version__
+from . import __version__, refdb
 from .api import Api, ApiError
 from .layout import PLATFORMS, STAGE_NAMES
 from .params import ParamError, parse_assignment
@@ -54,13 +54,111 @@ def _assignments(items: list[str]) -> dict[str, dict]:
 # ---------------------------------------------------------------------------- commands
 
 
+def _mb(n: int | None) -> str:
+    return "-" if n is None else f"{n / 1e6:.0f} MB"
+
+
+class _DownloadPrinter:
+    """Progress of a foreground download: one line per step, percentages in between."""
+
+    def __init__(self):
+        self.tty = sys.stdout.isatty()
+        self.message = None
+        self.step = -1
+        self.open_line = False
+
+    def __call__(self, st: dict) -> None:
+        if st["message"] != self.message:
+            if self.open_line:
+                print()
+                self.open_line = False
+            self.message, self.step = st["message"], -1
+            print(st["message"], flush=True)
+        done, total = st.get("bytes_done"), st.get("bytes_total")
+        if not total or done is None:
+            return
+        frac = min(1.0, done / total)
+        if self.tty:
+            print(f"\r  {100 * frac:5.1f}%  {_mb(done)} of {_mb(total)}", end="", flush=True)
+            self.open_line = True
+        elif int(frac * 10) > self.step:
+            self.step = int(frac * 10)
+            print(f"  {10 * self.step}%", flush=True)
+
+    def close(self) -> None:
+        if self.open_line:
+            print()
+
+
+def _download_status_line(st: dict) -> str:
+    if st["state"] is None:
+        return "no download so far"
+    name = st["db"] or "-"
+    if st["running"]:
+        progress = ""
+        if st["bytes_total"]:
+            progress = f", {100 * (st['bytes_done'] or 0) / st['bytes_total']:.0f}% of {_mb(st['bytes_total'])}"
+        return f"{name}: running (pid {st['pid']}) - {st['message']}{progress}"
+    if st["state"] == "error":
+        return f"{name}: failed ({_ts(st['finished'])}): {st['error']}"
+    return f"{name}: {st['state']} ({_ts(st['finished'])}) - {st['message']}"
+
+
 def cmd_dbs(api: Api, args) -> int:
-    dbs = api.list_dbs()
-    if not dbs:
-        print("no BLAST databases found")
+    if args.action == "list":
+        dbs = api.list_dbs()
+        if not dbs:
+            print("no BLAST databases found (download one with 'readscreen dbs download')")
+            return 0
+        print(_table([[d["name"], d["title"], d["sequences"], d["bases"]] for d in dbs],
+                     ["name", "title", "sequences", "bases"]))
         return 0
-    print(_table([[d["name"], d["title"], d["sequences"], d["bases"]] for d in dbs],
-                 ["name", "title", "sequences", "bases"]))
+    if args.action == "status":
+        print(_download_status_line(api.download_status()))
+        return 0
+    if args.action == "cancel":
+        print("cancel requested" if api.cancel_download() else "no download is running")
+        return 0
+    if args.action == "check":
+        for src in api.db_sources(remote=True):
+            local, remote = src["installed"], src["remote"]
+            print(f"{src['name']}  ({src['title']})")
+            print(f"  installed: {local['updated'] or 'unknown version'}, {local['sequences']} sequences"
+                  if local else "  installed: no")
+            if remote:
+                print(f"  NCBI:      {remote['updated']}, {remote['sequences']} sequences,"
+                      f" {_mb(remote['download_bytes'])} download")
+                print("  update available: readscreen dbs download" if src["update_available"] else "  up to date")
+            else:
+                print(f"  NCBI:      {src['remote_error']}")
+        return 0
+    # download
+    name = args.source or refdb.DEFAULT_SOURCE
+    src = next(s for s in api.db_sources(remote=not args.force) if s["name"] == name)
+    if not args.force:
+        if src["remote"] is None:
+            print(f"error: {src['remote_error']}", file=sys.stderr)
+            return 1
+        if src["update_available"] is False:
+            print(f"{src['name']} is up to date ({src['installed']['updated']}); use --force to download it again")
+            return 0
+    if args.background:
+        pid = api.start_download(src["name"])
+        print(f"download started in the background (pid {pid}); see 'readscreen dbs status'")
+        return 0
+    printer = _DownloadPrinter()
+    try:
+        result = api.run_download(src["name"], progress=printer)
+    except refdb.Cancelled:
+        printer.close()
+        print("download cancelled", file=sys.stderr)
+        return 130
+    except ApiError:
+        printer.close()
+        raise
+    printer.close()
+    print(f"installed {result['name']} version {result['updated']} ({result['sequences']} sequences) in {result['path']}")
+    print(f"jobs use it as: {result['db']}")
     return 0
 
 
@@ -312,7 +410,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--data-dir", help="folder for db/, jobs/ and logs/ (default: the project folder)")
     sub = ap.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("dbs", help="list the BLAST databases")
+    p = sub.add_parser("dbs", help="list, check or download the BLAST databases")
+    p.add_argument("action", nargs="?", choices=("list", "check", "download", "status", "cancel"), default="list",
+                   help="list: installed databases; check: compare with NCBI; download: download and install"
+                        " (or update); status/cancel: the running download")
+    p.add_argument("--source", choices=tuple(refdb.SOURCES), help="download: which database (default: the only one)")
+    p.add_argument("--force", action="store_true", help="download: also when the installed version is current")
+    p.add_argument("--background", action="store_true", help="download: run in a background process")
     p.set_defaults(func=cmd_dbs)
     p = sub.add_parser("stages", help="list the stages and their parameters")
     p.add_argument("--platform", choices=PLATFORMS, default="illumina")

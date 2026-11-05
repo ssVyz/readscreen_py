@@ -17,10 +17,12 @@ function summaryText(stage, s) {
     case 'analyze': return `${(s.platform || {}).name || '?'}; ${(s.suggestions || []).length} suggestion(s), ${(s.warnings || []).length} warning(s)`;
     case 'trim': return `${fmt.int(s.reads_in)} → ${fmt.int(s.reads_out)} reads`;
     case 'assemble': return `${fmt.int(s.sequences)} contigs, ${fmt.bp(s.bases)}, N50 ${fmt.int(s.n50)}`;
-    case 'blast': return `${s.mode}, ${s.task}: ${fmt.int(s.queries)} queries, ${fmt.int(s.hsps)} hits`;
+    case 'blast': return `${s.mode}, ${s.task}: ${fmt.int(s.queries)} queries, ${fmt.int(s.hsps)} hits`
+      + (s.database && s.database.updated ? ` (database of ${s.database.updated})` : '');
     case 'rank': return `${fmt.int(s.references_supported)} references in ${fmt.int(s.groups)} groups, ${s.auto_selected} auto-selected`;
     case 'select': return `${s.selected} selected (${s.mode})`;
-    case 'extract': return `${s.references} references, ${fmt.bp(s.bases)}`;
+    case 'extract': return `${s.references} references, ${fmt.bp(s.bases)}`
+      + (s.database_changed ? ` (database updated since blast: ${s.database_changed.blast} → ${s.database_changed.extract})` : '');
     case 'map': return s.skipped ? s.skipped : `${fmt.int(s.alignments)} alignments (${s.preset}${s.sensitivity ? `, ${s.sensitivity}` : ''})`;
     case 'report': return `${s.with_reads} of ${s.references} references with reads`;
     default: return '';

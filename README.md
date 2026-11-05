@@ -6,6 +6,18 @@ hits, mapping (minimap2) and coverage reports. Python 3.10+, standard library on
 
 Status: backend, worker, CLI and web interface (phases 1 and 2). Tested on Windows; Linux follows.
 
+## BLAST database
+
+Jobs need a nucleotide BLAST database in `blast_db/`. The RefSeq viral reference genomes can be
+downloaded from NCBI (about 270 MB download, 450 MB on disk), on the Settings page or with:
+
+```sh
+python main.py dbs check                            # installed version vs. NCBI's
+python main.py dbs download                         # download, check and install (or update)
+```
+
+The download uses `HTTPS_PROXY` if it is set. Other databases can be put into `blast_db/` by hand.
+
 ## Quick start (web)
 
 ```sh
@@ -36,6 +48,7 @@ also runs with `uv run main.py ...`.
 ```sh
 python -m unittest                                  # ~30 s, run from the project folder
 READSCREEN_E2E=1 python -m unittest tests.test_pipeline   # adds the ex02 end-to-end run (~2 min)
+READSCREEN_NET=1 python -m unittest tests.test_refdb      # adds a check of NCBI's metadata files
 ```
 
 Tests that need the binaries, the bundled BLAST database or `examples/` are skipped when those are missing.

@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from . import __version__, jobs, layout, params as params_mod, settings as settings_mod, store, worker
+from . import __version__, jobs, layout, params as params_mod, refdb, settings as settings_mod, store, worker
 from .logic import pairs
 from .params import ParamError
 from .paths import Env, ToolMissing
@@ -40,8 +40,10 @@ def _errors() -> Iterator[None]:
         raise ApiError(str(exc), exc.code) from None
     except (ParamError, ValueError, FileNotFoundError) as exc:
         raise ApiError(str(exc)) from None
-    except worker.AlreadyRunning as exc:
+    except (worker.AlreadyRunning, refdb.AlreadyRunning) as exc:
         raise ApiError(str(exc), "conflict") from None
+    except refdb.DownloadError as exc:
+        raise ApiError(str(exc)) from None
     except ToolMissing as exc:
         raise ApiError(str(exc)) from None
 
@@ -101,8 +103,45 @@ class Api:
                 name = path.resolve().relative_to(folder.resolve()).as_posix()
             except ValueError:
                 name = str(path)
+            if any(part.startswith(".") for part in name.split("/")):
+                continue  # e.g. a download being unpacked in .download/
             out.append({"name": name, "path": str(path), "title": f[2], "sequences": int(f[3]), "bases": int(f[4])})
         return sorted(out, key=lambda d: d["name"])
+
+    # ------------------------------------------------------------------ database downloads
+    def db_sources(self, remote: bool = False, max_age: float = 0.0) -> list[dict]:
+        """Databases that can be downloaded: the installed version and, with remote=True, NCBI's."""
+        with self._db() as conn:
+            values = settings_mod.get_all(conn)
+        out = []
+        for src in refdb.SOURCES.values():
+            item = {"name": src.name, "title": src.title, "db": src.db,
+                    "installed": refdb.installed(self.env, values, src)}
+            if remote:
+                try:
+                    item["remote"] = refdb.remote_info(values["download_url"], src, max_age=max_age)
+                    item["remote_error"] = None
+                except refdb.DownloadError as exc:
+                    item["remote"], item["remote_error"] = None, str(exc)
+                item["update_available"] = refdb.update_available(item["installed"], item["remote"])
+            out.append(item)
+        return out
+
+    def download_status(self) -> dict:
+        return refdb.status(self.env)
+
+    def start_download(self, name: str | None = None) -> int:
+        """Start a download in the background; its progress is in download_status()."""
+        with _errors():
+            return refdb.start_detached(self.env, refdb.get_source(name).name)
+
+    def run_download(self, name: str | None = None, progress=None) -> dict:
+        """Download and install in this process (the CLI); raises refdb.Cancelled on cancel."""
+        with _errors():
+            return refdb.Downloader(self.env, refdb.get_source(name), progress).run()
+
+    def cancel_download(self) -> bool:
+        return refdb.request_cancel(self.env)
 
     # ------------------------------------------------------------------ settings
     def get_settings(self) -> dict:
@@ -139,7 +178,8 @@ class Api:
                 if len(dbs) == 1:
                     blast_params["db"] = dbs[0]["name"]
                 elif not dbs:
-                    raise ApiError(f"no BLAST database found in {blast_db_dir(values)}")
+                    raise ApiError(f"no BLAST database found in {blast_db_dir(values)} (download the viral"
+                                   " reference genomes with 'readscreen dbs download' or on the Settings page)")
                 else:
                     raise ApiError("choose a BLAST database: " + ", ".join(d["name"] for d in dbs))
             job_id = jobs.create_job(

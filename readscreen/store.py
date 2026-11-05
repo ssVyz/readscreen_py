@@ -12,7 +12,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 1
+# Version 2 added the `download` table. Schema changes so far only add tables, so the
+# CREATE TABLE IF NOT EXISTS statements below also upgrade an older database.
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -96,6 +98,23 @@ CREATE TABLE IF NOT EXISTS worker (
     stop_request TEXT
 );
 INSERT OR IGNORE INTO worker (id) VALUES (1);
+CREATE TABLE IF NOT EXISTS download (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    pid INTEGER,
+    db TEXT,
+    state TEXT,
+    phase TEXT,
+    message TEXT,
+    bytes_done INTEGER,
+    bytes_total INTEGER,
+    version TEXT,
+    error TEXT,
+    started REAL,
+    finished REAL,
+    cancel_request INTEGER NOT NULL DEFAULT 0,
+    installing INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO download (id) VALUES (1);
 """
 
 
@@ -141,6 +160,10 @@ def init_db(path: str | Path) -> None:
             elif int(row["value"]) > SCHEMA_VERSION:
                 raise SchemaError(
                     f"database schema version {row['value']} is newer than this program ({SCHEMA_VERSION})"
+                )
+            elif int(row["value"]) < SCHEMA_VERSION:
+                conn.execute(
+                    "UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(SCHEMA_VERSION),)
                 )
     finally:
         conn.close()

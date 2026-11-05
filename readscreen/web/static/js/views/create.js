@@ -47,6 +47,7 @@ export function createView(main) {
   const asmRadios = {};
   const asmField = pathField({ kind: 'fasta', title: 'Choose an assembly (FASTA)', placeholder: 'Path to contigs (FASTA)' });
   const dbSel = h('select', {});
+  const dbHint = h('div', { class: 'help' });
   const selectRadios = {};
   const topGroups = h('input', { type: 'number', min: 0, step: 1 });
   const alternatives = h('input', { type: 'number', min: 0, step: 1 });
@@ -240,7 +241,7 @@ export function createView(main) {
             h('label', { class: 'check' }, trimChk, 'Trim the reads (simpletrim)'),
             h('label', { class: 'check' }, suggestChk, 'Apply the settings suggested by the analysis'))),
           ...row('Assembly', asmList),
-          ...row('BLAST database', dbSel),
+          ...row('BLAST database', h('div', {}, dbSel, dbHint)),
           ...row('Hit selection', selectList),
           h('label', {}, 'Mapping sensitivity'), sensRow,
           ...row('Pause after', pauseRow, 'The job stops after these stages until you continue it.'))),
@@ -266,6 +267,10 @@ export function createView(main) {
       dbSel.replaceChildren(
         dbs.length ? null : h('option', { value: '' }, 'No database found'),
         ...dbs.map((d) => h('option', { value: d.name }, `${d.title} (${d.name}, ${d.sequences.toLocaleString('en-US')} sequences)`)));
+      if (!dbs.length) {
+        dbHint.replaceChildren('No database installed yet. Download the RefSeq viral reference genomes on the ',
+          h('a', { href: '#/settings' }, 'Settings page'), '.');
+      }
       const preferred = settings['default.blast.db'];
       if (preferred) dbSel.value = preferred;
       await loadPlatform();

@@ -27,6 +27,10 @@ SETTINGS: Schema = {
         str, "0.5", help="shortread_assembler memory limit: fraction of RAM (0-1) or a size like 16G"
     ),
     "blast_db_dir": Param(str, "blast_db", help="folder with the BLAST databases (relative to the project root)"),
+    "download_url": Param(
+        str, "https://ftp.ncbi.nlm.nih.gov/blast/db/",
+        help="where database downloads come from: the NCBI BLAST database folder or a mirror of it",
+    ),
     "poll_interval": Param(float, 3.0, min=0.2, help="seconds between queue checks of an idle worker"),
     "heartbeat_interval": Param(float, 5.0, min=0.5, help="seconds between worker heartbeats"),
 }

@@ -70,6 +70,7 @@ def run(ctx: StageContext) -> dict:
         )
     doc = {
         "job": {"id": ctx.job_id, "name": ctx.job["name"], "platform": ctx.platform},
+        "database": ctx.stage_row("blast")["summary"].get("database"),
         "params": p,
         "taxa": taxa,
         "references": refs,

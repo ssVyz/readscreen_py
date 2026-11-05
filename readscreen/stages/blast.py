@@ -6,7 +6,9 @@ from .. import layout
 from ..logic.fastx import fasta_stats, fastq_to_fasta
 from ..logic.ranking import OUTFMT
 from ..params import Param, Schema
-from .common import StageContext, check_reserved, count_lines, current_reads, resolve_db
+from .common import (
+    StageContext, check_reserved, count_lines, current_reads, describe_db, read_db_metadata, resolve_db,
+)
 
 PARAMS: Schema = {
     "db": Param(str, None, help="BLAST database (name relative to the database folder)"),
@@ -43,8 +45,11 @@ def run(ctx: StageContext) -> dict:
         n_queries = subsample["used"] * (2 if reads.paired else 1)
     task = p["task"] if p["task"] != "auto" else ("dc-megablast" if mode == "contigs" else "megablast")
     evalue = p["evalue"] if p["evalue"] is not None else (1e-10 if mode == "contigs" else 1e-5)
-    summary = {"mode": mode, "task": task, "evalue": evalue, "db": str(db), "queries": n_queries,
-               "subsample": subsample}
+    # which version of the database the results come from (shown with the job and in result.json)
+    database = {"name": p["db"], **describe_db(read_db_metadata(ctx.tool("blastdbcmd"), db))}
+    ctx.log(f"database {p['db']}: version {database['updated'] or 'unknown'}, {database['sequences']} sequences")
+    summary = {"mode": mode, "task": task, "evalue": evalue, "db": str(db), "database": database,
+               "queries": n_queries, "subsample": subsample}
     if n_queries == 0:
         out_tsv.write_text("")
         ctx.log("no query sequences; BLAST skipped")

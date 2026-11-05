@@ -7,6 +7,8 @@ examples/
 db/
 jobs/
 
+!assets/**
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -88,8 +90,7 @@ reports/
 *.lib
 *.so
 *.dylib
-*.dll
-*.exe
+
 *.out
 *.app
 *.i

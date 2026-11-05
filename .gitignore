@@ -3,6 +3,7 @@
 
 old/
 blast_db/
+examples/
 
 # Python-generated files
 __pycache__/

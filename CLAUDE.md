@@ -18,3 +18,7 @@ Current version = top entry in `CHANGELOG.md`. If a version is added elsewhere (
 - simpletrim -> Repo available under C://repos/simpletrim_rs
 
 Binaries are in their respective folders in assets/. If you require changes for any of them, ask and describe what exactly is needed and why.
+
+## implementation stage
+
+For implementation, instructions are located at instructions.md. Currently, only windows binaries are available, we will build for windows first and then test compatibility in the respective environments later.

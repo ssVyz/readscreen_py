@@ -4,6 +4,8 @@
 old/
 blast_db/
 examples/
+db/
+jobs/
 
 # Python-generated files
 __pycache__/

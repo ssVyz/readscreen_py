@@ -225,6 +225,11 @@ def _log(r: Request):
     return {"text": r.api.stage_log(r.id(), r.match.group("stage"), int(r.query.get("lines", 2000)))}
 
 
+@route("GET", J + r"/analysis")
+def _analysis(r: Request):
+    return r.api.get_analysis(r.id())
+
+
 @route("GET", J + r"/ranking")
 def _ranking(r: Request):
     return r.api.get_ranking(r.id())

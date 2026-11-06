@@ -169,6 +169,162 @@ export function coveragePlot({ length, bins, minDepth = 1, title }) {
   };
 }
 
+// Read quality along the read: one or two line series (R1/R2, or from the read start/end).
+// series: [{name, x[], y[] (null = no data)}]; xBin: x values are centres of bins this wide
+export function qualityPlot({ series, xLabel, xName = 'position', xBin = null, yLabel = 'mean quality', height = 210 }) {
+  const el = h('div', { class: 'plot' });
+  const tip = h('div', { class: 'tooltip', hidden: true });
+  const legend = series.length > 1
+    ? h('div', { class: 'legend' }, series.map((sr, i) => h('span', {},
+      h('span', { class: 'swatch', style: { background: `var(--series-${i + 1})` } }), sr.name)))
+    : null;
+  const wrap = h('div', {}, legend, el);
+  const xs = series[0].x;
+  const n = xs.length;
+  const xmin = Math.min(...series.map((sr) => sr.x[0]));
+  const xmax = Math.max(...series.map((sr) => sr.x[sr.x.length - 1]));
+  let ymax = 0;
+  for (const sr of series) for (const v of sr.y) if (v != null && v > ymax) ymax = v;
+  let width = 0;
+  let svg = null;
+  let active = -1;
+  const m = { l: 44, r: 92, t: 10, b: 34 };
+  const nearest = (sr, xv) => {
+    let best = -1;
+    let dist = Infinity;
+    sr.x.forEach((v, i) => { if (Math.abs(v - xv) < dist) { dist = Math.abs(v - xv); best = i; } });
+    return best;
+  };
+
+  function render() {
+    width = Math.max(320, el.clientWidth || 700);
+    const pw = width - m.l - m.r;
+    const ph = height - m.t - m.b;
+    // phred scale: ticks every 10 (every 5 for low-quality data), just above the highest value
+    const yStep = ymax > 20 ? 10 : 5;
+    const ytop = Math.max(yStep, Math.ceil(ymax / yStep) * yStep);
+    const yTicks = [];
+    for (let v = 0; v <= ytop; v += yStep) yTicks.push(v);
+    const x = (v) => m.l + (xmax > xmin ? ((v - xmin) / (xmax - xmin)) * pw : pw / 2);
+    const y = (v) => m.t + ph - (v / ytop) * ph;
+    const xStep = niceStep(xmax - xmin || 1, Math.max(2, Math.floor(pw / 90)));
+    const xTicks = [];
+    for (let v = Math.ceil(xmin / xStep) * xStep; v <= xmax; v += xStep) xTicks.push(v);
+    const paths = series.map((sr) => {
+      let d = '';
+      let open = false;
+      sr.y.forEach((v, i) => {
+        if (v == null) { open = false; return; }
+        d += `${open ? 'L' : 'M'}${x(sr.x[i]).toFixed(1)},${y(v).toFixed(1)}`;
+        open = true;
+      });
+      return d;
+    });
+    // end labels, pushed apart when the lines end close together
+    const ends = series.map((sr, i) => {
+      let k = sr.y.length - 1;
+      while (k > 0 && sr.y[k] == null) k -= 1;
+      return { i, ly: y(sr.y[k] ?? 0) };
+    }).sort((a, b) => a.ly - b.ly);
+    for (let k = 1; k < ends.length; k++) if (ends[k].ly - ends[k - 1].ly < 13) ends[k].ly = ends[k - 1].ly + 13;
+
+    svg = s('svg', {
+      viewBox: `0 0 ${width} ${height}`, height, role: 'img', tabindex: '0',
+      'aria-label': `${yLabel} by ${xLabel}: ${series.map((sr) => sr.name).join(' and ')}. Use the arrow keys to read values.`,
+    },
+    yTicks.map((t) => s('line', { class: t === 0 ? 'axis' : 'grid', x1: m.l, x2: m.l + pw, y1: y(t), y2: y(t) })),
+    yTicks.map((t) => s('text', { class: 'tick', x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end' }, `Q${t}`)),
+    xTicks.map((t) => s('text', { class: 'tick', x: x(t), y: height - 18, 'text-anchor': 'middle' }, t.toLocaleString('en-US'))),
+    s('text', { class: 'tick', x: m.l + pw / 2, y: height - 2, 'text-anchor': 'middle' }, xLabel),
+    paths.map((d, i) => s('path', { class: `line${i ? ' s2' : ''}`, d })),
+    series.length > 1 ? ends.map((e) => s('text', { class: 'series-label', x: m.l + pw + 8, y: e.ly + 4 }, series[e.i].name)) : null,
+    s('line', { class: 'cross', y1: m.t, y2: m.t + ph, x1: 0, x2: 0, visibility: 'hidden' }),
+    series.map((_, i) => s('circle', { class: `marker${i ? ' s2' : ''}`, r: 4, cx: 0, cy: 0, visibility: 'hidden' })),
+    s('rect', { class: 'hit', x: m.l, y: m.t, width: pw, height: ph }));
+    svg._map = { x, y, pw };
+    const hit = svg.querySelector('.hit');
+    hit.addEventListener('pointermove', (e) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * width;
+      show(nearest(series[0], xmin + ((px - m.l) / pw) * (xmax - xmin)));
+    });
+    hit.addEventListener('pointerleave', hide);
+    svg.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        show(active < 0 ? 0 : active + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 10 : 1));
+      } else if (e.key === 'Escape') hide();
+    });
+    svg.addEventListener('blur', hide);
+    el.replaceChildren(svg, tip);
+  }
+
+  function show(i) {
+    if (!svg) return;
+    active = Math.max(0, Math.min(n - 1, i));
+    const { x, y } = svg._map;
+    const xv = xs[active];
+    const cx = x(xv);
+    const cross = svg.querySelector('.cross');
+    cross.setAttribute('x1', cx);
+    cross.setAttribute('x2', cx);
+    cross.setAttribute('visibility', 'visible');
+    const markers = svg.querySelectorAll('.marker');
+    const lines = [];
+    let topY = height;
+    series.forEach((sr, k) => {
+      const j = nearest(sr, xv);
+      const v = sr.y[j];
+      if (v == null) {
+        markers[k].setAttribute('visibility', 'hidden');
+      } else {
+        markers[k].setAttribute('cx', x(sr.x[j]));
+        markers[k].setAttribute('cy', y(v));
+        markers[k].setAttribute('visibility', 'visible');
+        topY = Math.min(topY, y(v));
+      }
+      lines.push(h('div', {}, h('span', { class: `key${k ? ' s2' : ''}` }),
+        h('span', { class: 'v' }, v == null ? '–' : `Q${fmt.num(v, 1)}`), ' ', h('span', { class: 'k' }, sr.name)));
+    });
+    const where = xBin ? `${fmt.int(xv - xBin / 2 + 1)}–${fmt.int(xv + xBin / 2)}` : fmt.int(xv);
+    tip.replaceChildren(...lines, h('div', { class: 'k' }, `${xName} ${where}`));
+    tip.hidden = false;
+    const scaleX = el.clientWidth / width;
+    const left = cx * scaleX;
+    const tipW = tip.offsetWidth || 150;
+    tip.style.left = `${left + 12 + tipW > el.clientWidth ? left - tipW - 12 : left + 12}px`;
+    tip.style.top = `${Math.max(0, topY * (svg.getBoundingClientRect().height / height) - 30)}px`;
+  }
+
+  function hide() {
+    if (!svg) return;
+    active = -1;
+    tip.hidden = true;
+    svg.querySelector('.cross').setAttribute('visibility', 'hidden');
+    svg.querySelectorAll('.marker').forEach((mk) => mk.setAttribute('visibility', 'hidden'));
+  }
+
+  const ro = new ResizeObserver(() => {
+    if (Math.abs((el.clientWidth || 0) - width) > 4) render();
+  });
+  ro.observe(el);
+  requestAnimationFrame(render);
+  return { el: wrap, dispose: () => ro.disconnect() };
+}
+
+export function qualityTable({ series, xName = 'position', xBin = null }) {
+  const at = (xv) => (xBin ? `${fmt.int(xv - xBin / 2 + 1)}–${fmt.int(xv + xBin / 2)}` : fmt.int(xv));
+  const rows = series[0].x.map((xv) => h('tr', {}, h('td', { class: 'num' }, at(xv)),
+    series.map((sr) => {
+      const v = sr.y[sr.x.indexOf(xv)];
+      return h('td', { class: 'num' }, v == null ? '–' : fmt.num(v, 1));
+    })));
+  return h('div', { class: 'table-wrap', style: { maxHeight: '320px', overflow: 'auto' } },
+    h('table', { class: 'data' },
+      h('thead', {}, h('tr', {}, h('th', { class: 'num' }, xName), series.map((sr) => h('th', { class: 'num' }, sr.name)))),
+      h('tbody', {}, rows)));
+}
+
 // The same numbers as a table (accessibility / exact values).
 export function binsTable({ length, bins }) {
   const n = bins.count;

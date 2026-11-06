@@ -24,8 +24,13 @@ class ShortReadStagesTest(TempEnvCase):
         rng = random.Random(7)
         genome = random_seq(6000, rng)
         r1, r2 = write_pairs(self.tmp, simulate_pairs(genome, 900, rng))
+        trim = {  # every short-mode option, so simpletrim checks the flags readscreen builds
+            "min_base_quality": 15, "max_low_quality_percent": 40, "min_mean_quality": 20, "min_length": 30,
+            "max_length": 500, "cut_tail": True, "cut_window_size": 4, "cut_mean_quality": 20, "trim_front": 0,
+            "trim_tail": 0, "adapter_preset": "truseq", "poly_g": "auto", "trim_poly_x": True,
+        }
         job = self.api.create_job(platform="illumina", r1=str(r1), r2=str(r2),
-                                  params={"blast": {"db": "unused"}}, pauses=["assemble"])
+                                  params={"blast": {"db": "unused"}, "trim": trim}, pauses=["assemble"])
         Worker(self.env, exit_when_empty=True, poll=0.1).run()
         job = self.api.get_job(job["id"])
         self.assertEqual(job["status"], "paused", job["error"])
@@ -34,6 +39,12 @@ class ShortReadStagesTest(TempEnvCase):
         self.assertTrue(st["analyze"]["summary"]["paired"])
         self.assertEqual(st["trim"]["summary"]["reads_in"], 900)
         self.assertGreater(st["trim"]["summary"]["reads_out"], 850)
+        self.assertEqual(st["trim"]["summary"]["mode"], "short")
+        self.assertIn("--average-quality", st["trim"]["summary"]["flags"])
+        analysis = self.api.get_analysis(job["id"])
+        self.assertEqual(analysis["columns"], ["R1", "R2"])
+        self.assertEqual(len(analysis["quality"]["series"]), 2)
+        self.assertIn("Length min / median / max", self.api.stage_log(job["id"], "analyze"))
         asm = st["assemble"]["summary"]
         self.assertGreaterEqual(asm["sequences"], 1)
         self.assertGreater(asm["longest"], 2000)
@@ -47,12 +58,23 @@ class ShortReadStagesTest(TempEnvCase):
             s = rng.randint(0, len(genome) - n)
             reads.append(mutate(genome[s:s + n], 0.995, rng))
         fq = write_fastq_gz(self.tmp / "hifi.fastq.gz", reads)
+        trim = {  # every long-mode option, so simpletrim checks the flags readscreen builds
+            "min_base_quality": 10, "min_mean_quality": 7, "min_length": 500, "max_length": 0, "cut_front": True,
+            "cut_mean_quality": 17, "trim_front": 0, "trim_tail": 0, "start_adapter": "auto", "end_adapter": "none",
+            "chimeric_reads": "discard", "low_quality_mode": "split", "low_quality_threshold": 7, "trim_poly_x": True,
+        }
         job = self.api.create_job(platform="hifi", r1=str(fq), pauses=["assemble"],
-                                  params={"blast": {"db": "unused"}, "assemble": {"mode": "assemble"}})
+                                  params={"blast": {"db": "unused"}, "trim": trim,
+                                          "assemble": {"mode": "assemble", "fragment_overlap": 40}})
         Worker(self.env, exit_when_empty=True, poll=0.1).run()
         job = self.api.get_job(job["id"])
         self.assertEqual(job["status"], "paused", job["error"])
         st = {s["name"]: s for s in job["stages"]}
+        self.assertEqual(st["trim"]["summary"]["mode"], "long")
+        self.assertEqual(st["trim"]["summary"]["reads_in"], 150)
+        self.assertGreater(st["trim"]["summary"]["reads_out"], 100)
+        self.assertEqual(self.api.get_analysis(job["id"])["mode"], "long")
+        self.assertIn("--fragment-overlap 40", self.api.stage_log(job["id"], "assemble"))
         self.assertGreaterEqual(st["assemble"]["summary"]["sequences"], 1)
         self.assertFalse(any((self.env.jobs_dir).rglob("fragments.fastq.gz")))
 

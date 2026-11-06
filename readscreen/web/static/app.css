@@ -18,6 +18,7 @@
   --accent-ink: #ffffff;
   --accent-wash: rgba(42, 120, 214, 0.10);
   --series-1: #2a78d6;
+  --series-2: #eb6834;
   --good: #0ca30c;
   --warning: #fab219;
   --serious: #ec835a;
@@ -51,6 +52,7 @@
     --accent-ink: #ffffff;
     --accent-wash: rgba(57, 135, 229, 0.16);
     --series-1: #3987e5;
+    --series-2: #d95926;
     --critical-wash: rgba(208, 59, 59, 0.16);
     --warning-wash: rgba(250, 178, 25, 0.12);
     --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
@@ -75,6 +77,7 @@
   --accent-ink: #ffffff;
   --accent-wash: rgba(57, 135, 229, 0.16);
   --series-1: #3987e5;
+  --series-2: #d95926;
   --critical-wash: rgba(208, 59, 59, 0.16);
   --warning-wash: rgba(250, 178, 25, 0.12);
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
@@ -227,9 +230,37 @@ details.advanced > summary { cursor: pointer; color: var(--text-2); font-weight:
 details.advanced[open] > summary { margin-bottom: 12px; }
 .param-stage + .param-stage { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
 .param-stage h3 { text-transform: capitalize; }
-.param-row { display: grid; grid-template-columns: 200px 1fr; gap: 4px 16px; align-items: center; margin-bottom: 8px; }
+.param-row { display: grid; grid-template-columns: 180px 1fr; gap: 4px 16px; align-items: center; margin-bottom: 8px; }
 .param-row .help { grid-column: 2; }
-.param-row label.name { font-family: var(--mono); font-size: 12.5px; color: var(--text-2); }
+.param-row label.name { font-family: var(--mono); font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.param-row label.plain-name { font-size: 13px; color: var(--text-2); }
+.param-group + .param-group { margin-top: 12px; }
+.param-group h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
+
+/* ------------------------------------------------------------------ new job: step cards */
+.step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.step-head h2 { margin: 0; }
+.step-num {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 22px; height: 22px; border-radius: 50%; background: var(--surface-3);
+  color: var(--text-2); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.step-intro { margin: 0 0 12px 32px; }
+.card.step > .form-grid, .card.step > .radio-list, .card.step > .stack, .card.step > div { margin-top: 10px; }
+.step-foot { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.step-foot:empty { display: none; }
+.pause-row { gap: 6px 14px; }
+.inactive { opacity: 0.5; }
+
+/* ------------------------------------------------------------------ read analysis */
+.analysis-wrap { max-width: 760px; }
+.analysis-table td.num, .analysis-table th.num { white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+.legend .swatch { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 1px; }
+.plot .line.s2 { stroke: var(--series-2); }
+.plot .marker.s2 { fill: var(--series-2); }
+.plot .series-label { font-size: 11px; fill: var(--text-2); }
+.tooltip .key.s2 { background: var(--series-2); }
 
 /* ------------------------------------------------------------------ stages */
 .stages td.state { width: 120px; }

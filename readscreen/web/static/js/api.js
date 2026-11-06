@@ -61,6 +61,7 @@ export const api = {
   setPause: (id, stage, on) => request('PUT', `/api/jobs/${id}/pause/${stage}`, { on }),
   reassign: (id, body) => request('POST', `/api/jobs/${id}/reassign`, body),
   log: (id, stage, lines = 2000) => request('GET', `/api/jobs/${id}/log/${stage}?lines=${lines}`),
+  analysis: (id) => request('GET', `/api/jobs/${id}/analysis`),
 
   ranking: (id) => request('GET', `/api/jobs/${id}/ranking`),
   setSelection: (id, refs, cont = false) => request('PUT', `/api/jobs/${id}/selection`, { refs, continue: cont }),

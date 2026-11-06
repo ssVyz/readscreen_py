@@ -17,7 +17,7 @@ import traceback
 from types import ModuleType
 
 from . import jobs, layout, runner, settings as settings_mod, store
-from .params import ParamError
+from .params import ParamError, validate
 from .paths import ROOT, Env, ToolMissing
 from .stages import registry
 from .stages.common import PauseRequest, StageContext, StageError
@@ -346,8 +346,10 @@ class Worker:
                 jobs.set_status(conn, job_id, "done")
                 log.info("job %s: done", job_id)
                 return "next"
-            name, params = nxt["name"], nxt["params"]
+            name = nxt["name"]
             mod = self.stages[name]
+            # jobs created by an older version lack parameters added since: use their defaults
+            params = validate(getattr(mod, "PARAMS", {}), {}, job["platform"], base=nxt["params"])
             if getattr(mod, "is_skipped", None) and mod.is_skipped(params):
                 jobs.stage_finished(conn, job_id, name, "skipped", None)
                 continue

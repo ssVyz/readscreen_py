@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from ..layout import is_long
+from ..logic.analysis import overview, text_lines
 from ..params import Param, Schema
 from .common import StageContext, StageError, raw_reads
 
@@ -43,6 +44,15 @@ def run(ctx: StageContext) -> dict:
         )
     command = str(report.get("suggested_command", ""))
     mode = command.split()[1] if len(command.split()) > 1 else None
+    try:
+        lines = text_lines(overview(report))
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:  # an unexpected report layout
+        lines = [f"(no readable summary: {exc!r})"]
+    ctx.log("read analysis:\n  " + "\n  ".join(lines))
+    for w in warnings:
+        ctx.log(f"warning: {w}")
+    for s in report.get("suggestions") or []:
+        ctx.log(f"suggestion: {' '.join(map(str, s.get('flags', [])))} ({s.get('reason', '')})")
     return {
         "platform": platform,
         "paired": report.get("paired"),

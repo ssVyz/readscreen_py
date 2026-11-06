@@ -3,19 +3,21 @@
 import { api } from '../api.js';
 import { pathField } from '../components/filepicker.js';
 import { paramEditor } from '../components/params.js';
+import { qualityPlot, qualityTable } from '../components/plot.js';
 import {
   act, callout, fmt, h, live, modal, pauseText, promptDialog, stateBadge, statusBadge, toast,
 } from '../ui.js';
 import { cancelJob, continueJob, deleteJob, queueJob, resetJob, saveParams } from './actions.js';
 
 const SKIPPABLE = new Set(['analyze', 'trim', 'assemble']);
+const LONG_PLATFORMS = new Set(['ont', 'hifi', 'clr']);
 
 function summaryText(stage, s) {
   if (!s) return '';
   switch (stage) {
     case 'input': return (s.files || []).map((f) => `${f.role}: ${fmt.bytes(f.size)}`).join(', ');
     case 'analyze': return `${(s.platform || {}).name || '?'}; ${(s.suggestions || []).length} suggestion(s), ${(s.warnings || []).length} warning(s)`;
-    case 'trim': return `${fmt.int(s.reads_in)} → ${fmt.int(s.reads_out)} reads`;
+    case 'trim': return `${s.mode ? `${s.mode} mode: ` : ''}${fmt.int(s.reads_in)} → ${fmt.int(s.reads_out)} reads`;
     case 'assemble': return `${fmt.int(s.sequences)} contigs, ${fmt.bp(s.bases)}, N50 ${fmt.int(s.n50)}`;
     case 'blast': return `${s.mode}, ${s.task}: ${fmt.int(s.queries)} queries, ${fmt.int(s.hsps)} hits`
       + (s.database && s.database.updated ? ` (database of ${s.database.updated})` : '');
@@ -75,7 +77,8 @@ export function jobView(main, idText) {
   function editParams(stage) {
     const st = job.stages.find((s) => s.name === stage);
     const info = stageInfo.find((s) => s.name === stage);
-    const ed = paramEditor(info.params, st.params, { exclude: ['confirmed'] });
+    const readMode = LONG_PLATFORMS.has(job.platform) ? 'long' : 'short';
+    const ed = paramEditor(info.params, st.params, { exclude: ['confirmed'], mode: readMode, autoMode: readMode });
     const note = st.state !== 'pending'
       ? callout('warn', 'This stage is done.', 'Saving changed parameters resets the job to this stage.')
       : null;
@@ -256,27 +259,82 @@ export function jobView(main, idText) {
           }, 'Edit'))));
   }
 
+  // read statistics: loaded once per analyze run (keyed by its finish time), kept across re-renders
+  const analysis = { key: null, data: null, error: null };
+  let analysisPlots = [];
+  let showQualityTable = false;
+
+  function loadAnalysis(key) {
+    analysis.key = key;
+    analysis.data = null;
+    analysis.error = null;
+    api.analysis(id)
+      .then((d) => { analysis.data = d; })
+      .catch((err) => { analysis.error = err.message; })
+      .finally(() => { if (job && analysis.key === key) render(job); });
+  }
+
+  const ge = (label) => label.replace(/>=/g, '≥');
+
+  function statsBlock() {
+    if (analysis.error) return callout('info', 'No statistics', analysis.error);
+    if (!analysis.data) return h('div', { class: 'empty' }, 'Loading the statistics…');
+    const a = analysis.data;
+    const table = h('div', { class: 'table-wrap analysis-wrap' }, h('table', { class: 'data analysis-table' },
+      a.columns.length > 1 ? h('thead', {}, h('tr', {}, h('th', {}, ''), a.columns.map((c) => h('th', { class: 'num' }, c)))) : null,
+      h('tbody', {}, a.rows.map((r) => h('tr', {}, h('td', { class: 'secondary' }, ge(r.label)),
+        r.values.map((v) => h('td', { class: 'num' }, v)))))));
+    const extra = a.extra.length
+      ? h('div', { class: 'kv', style: { marginTop: '14px', gridTemplateColumns: '190px 1fr' } },
+        a.extra.flatMap((e) => [h('div', {}, e.label), h('div', { class: /^[ACGTN]{6,}/.test(e.value) ? 'mono break' : '' }, e.value)]))
+      : null;
+    let quality = null;
+    if (a.quality) {
+      const q = a.quality;
+      const opts = { series: q.series, xLabel: q.x_label, xName: q.x_name, xBin: q.x_bin, yLabel: q.y_label };
+      const plot = qualityPlot(opts);
+      analysisPlots.push(plot);
+      const area = h('div', {}, showQualityTable ? qualityTable(opts) : null);
+      const toggle = h('button', {
+        class: 'btn small ghost', type: 'button',
+        onclick: () => {
+          showQualityTable = !showQualityTable;
+          area.replaceChildren(...(showQualityTable ? [qualityTable(opts)] : []));
+          toggle.textContent = showQualityTable ? 'Hide table' : 'Show as table';
+        },
+      }, showQualityTable ? 'Hide table' : 'Show as table');
+      quality = h('div', { style: { marginTop: '18px' } },
+        h('div', { class: 'card-head' }, h('h3', {}, 'Quality along the reads'), toggle),
+        plot.el, area);
+    }
+    return h('div', {}, table, extra, quality,
+      a.footnote ? h('p', { class: 'help', style: { marginTop: '8px' } }, a.footnote) : null);
+  }
+
   function analysisCard() {
     const st = job.stages.find((s) => s.name === 'analyze');
     if (st.state !== 'done' || !st.summary) return null;
+    if (analysis.key !== st.finished) loadAnalysis(st.finished);
     const s = st.summary;
     const trim = job.stages.find((x) => x.name === 'trim');
     const applies = trim.params.apply_suggestions;
-    const plat = s.platform || {};
     const toggle = h('input', {
       type: 'checkbox', checked: applies,
       onchange: async (e) => after(await saveParams(job, 'trim', { apply_suggestions: e.target.checked }, stageNames)),
       disabled: job.status === 'running',
     });
     const applied = trim.state === 'done' ? (trim.summary?.applied_suggestions || []) : null;
+    const a = analysis.data;
+    const plat = s.platform || {};
     return h('section', { class: 'card' },
       h('h2', {}, 'Read analysis'),
-      h('div', { class: 'kv' },
-        h('div', {}, 'Detected'), h('div', {}, plat.name || 'unknown', plat.instrument_model ? ` (${plat.instrument_model})` : ''),
-        h('div', {}, 'Reads inspected'), h('div', {}, fmt.int(s.sample?.records), s.sample?.estimated_total_records ? h('span', { class: 'muted' }, ` of ~${fmt.int(s.sample.estimated_total_records)}`) : '')),
-      (s.warnings || []).length ? h('div', { style: { marginTop: '12px' } }, callout('warn', 'Warnings', h('ul', { class: 'plain' }, s.warnings.map((w) => h('li', {}, w))))) : null,
-      (s.notes || []).length ? h('div', { style: { marginTop: '12px' } }, h('h3', {}, 'Notes'), h('ul', { class: 'plain small secondary' }, s.notes.map((n) => h('li', {}, n)))) : null,
-      h('div', { style: { marginTop: '12px' } },
+      h('div', { class: 'kv', style: { marginBottom: '14px' } },
+        h('div', {}, 'Detected'), h('div', {}, a ? a.platform : (plat.name || 'unknown')),
+        h('div', {}, 'Inspected'), h('div', {}, a ? a.inspected : fmt.int(s.sample?.records))),
+      (s.warnings || []).length ? h('div', { style: { marginBottom: '14px' } }, callout('warn', 'Warnings', h('ul', { class: 'plain' }, s.warnings.map((w) => h('li', {}, w))))) : null,
+      statsBlock(),
+      (s.notes || []).length ? h('div', { style: { marginTop: '16px' } }, h('h3', {}, 'Notes'), h('ul', { class: 'plain small secondary' }, s.notes.map((n) => h('li', {}, n)))) : null,
+      h('div', { style: { marginTop: '16px' } },
         h('h3', {}, 'Suggested trim settings'),
         (s.suggestions || []).length
           ? h('ul', { class: 'plain' }, s.suggestions.map((x) => h('li', {}, h('code', {}, x.flags.join(' ')), h('span', { class: 'secondary small' }, ` — ${x.reason}`))))
@@ -288,8 +346,9 @@ export function jobView(main, idText) {
   function render(data) {
     job = data;
     document.title = `${job.name} · readscreen`;
-    root.replaceChildren(header(), h('div', { class: 'stack' }, ...notices(), stagesCard(),
-      h('div', { class: 'grid-2' }, infoCard(), analysisCard())));
+    analysisPlots.forEach((p) => p.dispose());
+    analysisPlots = [];
+    root.replaceChildren(header(), h('div', { class: 'stack' }, ...notices(), stagesCard(), analysisCard(), infoCard()));
   }
 
   const view = live(root, {
@@ -300,6 +359,7 @@ export function jobView(main, idText) {
   return {
     dispose() {
       view.dispose();
+      analysisPlots.forEach((p) => p.dispose());
       document.title = 'readscreen';
     },
   };

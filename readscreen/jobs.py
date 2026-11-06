@@ -130,6 +130,7 @@ def create_job(
     if assembly:
         params.setdefault("assemble", {})["mode"] = "external"
     stage_params = build_params(platform, settings, params)
+    _check_trim_mode(stage_params["trim"], platform, bool(r2))
     if stage_params["assemble"]["mode"] == "external" and not assembly:
         raise JobError("assemble.mode is 'external' but no assembly file was given")
     if not stage_params["blast"]["db"]:
@@ -176,6 +177,13 @@ def create_job(
     return job_id
 
 
+def _check_trim_mode(trim_params: dict, platform: str, paired: bool) -> None:
+    from .stages.trim import resolve_mode
+
+    if paired and resolve_mode(trim_params, platform) == "long":
+        raise JobError("trim.mode 'long' takes one read file; use 'short' or 'auto' for paired reads")
+
+
 def _import_assembly(env: Env, job_id: int, path: str) -> None:
     dest = layout.imports_dir(env, job_id)
     dest.mkdir(parents=True, exist_ok=True)
@@ -197,13 +205,16 @@ def set_params(
     if mod is None:
         raise JobError(f"unknown stage: {stage}")
     row = conn.execute("SELECT state, params FROM stages WHERE job_id = ? AND name = ?", (job_id, stage)).fetchone()
-    current = store.loads(row["params"], {})
+    # parameters added in later versions get their defaults, so they do not count as changes
+    current = validate(mod.PARAMS, {}, job["platform"], base=store.loads(row["params"], {}))
     try:
         merged = validate(mod.PARAMS, updates, job["platform"], base=current)
         if hasattr(mod, "check"):
             mod.check(merged, job["platform"])
     except ParamError as exc:
         raise JobError(f"{stage}.{exc}") from None
+    if stage == "trim":
+        _check_trim_mode(merged, job["platform"], bool(job["paired"]))
     if stage == "assemble" and merged["mode"] == "external" and not _has_assembly(conn, job_id):
         raise JobError("assemble.mode 'external' needs an assembly file (reassign one first)")
     if stage == "select" and merged["mode"] != current.get("mode"):

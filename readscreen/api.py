@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from . import __version__, jobs, layout, params as params_mod, refdb, settings as settings_mod, store, worker
-from .logic import pairs
+from .logic import analysis, pairs
 from .params import ParamError
 from .paths import Env, ToolMissing
 from .runner import CREATE_NO_WINDOW, tail
@@ -240,6 +240,20 @@ class Api:
         with _errors():
             path = layout.stage_log(self.env, job_id, stage)
         return tail(path, max_lines) if path.is_file() else ""
+
+    def get_analysis(self, job_id: int) -> dict:
+        """Read statistics of the analyze stage (table rows and quality series), from its report file."""
+        with self._db() as conn:
+            jobs.job_row(conn, job_id)
+            row = conn.execute("SELECT state FROM stages WHERE job_id = ? AND name = 'analyze'", (job_id,)).fetchone()
+        path = layout.stage_dir(self.env, job_id, "analyze") / "analyze.json"
+        if row["state"] != "done" or not path.is_file():
+            raise ApiError(f"job {job_id} has no read analysis", "not_found")
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            return analysis.overview(report)
+        except (OSError, ValueError, KeyError, TypeError, ZeroDivisionError) as exc:
+            raise ApiError(f"cannot read the analysis report: {exc}") from None
 
     # ------------------------------------------------------------------ ranking, selection, results
     def get_ranking(self, job_id: int) -> list[dict]:

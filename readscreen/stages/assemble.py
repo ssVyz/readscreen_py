@@ -20,7 +20,12 @@ PARAMS: Schema = {
     "min_count": Param(int, 2, min=1, help="minimum (k+1)-mer count"),
     "min_contig_len": Param(int, 200, min=1, help="minimum contig length"),
     "memory": Param(str, None, help="memory limit (fraction or size like 16G); default from settings"),
-    "fragment_length": Param(int, 150, min=50, help="long reads: fragment length for the assembler"),
+    "fragment_length": Param(int, 150, min=50, only="long",
+                             help="long reads are cut into fragments of at most this length for the assembler"
+                                  " (BLAST and mapping use the full reads)"),
+    "fragment_overlap": Param(int, 50, min=0, only="long",
+                              help="bases shared by neighbouring fragments, so k-mers across a cut are kept;"
+                                   " must be smaller than fragment_length"),
     "extra_args": Param(list, [], help="additional shortread_assembler arguments"),
 }
 
@@ -34,6 +39,8 @@ def is_skipped(params: dict) -> bool:
 def check(params: dict, platform: str) -> None:
     if params["k"] % 2 == 0:
         raise ParamError("k: must be odd")
+    if params.get("fragment_overlap", 0) >= params["fragment_length"]:
+        raise ParamError("fragment_overlap: must be smaller than fragment_length")
 
 
 def run(ctx: StageContext) -> dict:
@@ -57,7 +64,7 @@ def run(ctx: StageContext) -> dict:
             ctx.tool("simpletrim"), "long", "-w", ctx.threads,
             "-i", reads.files[0], "-o", fragments, "--force",
             "--disable-adapter-trimming", "--disable-quality-filter", "--disable-length-filter",
-            "--fragment-length", p["fragment_length"],
+            "--fragment-length", p["fragment_length"], "--fragment-overlap", p["fragment_overlap"],
         ])
         read_args = ["-r", fragments]
     elif reads.paired:

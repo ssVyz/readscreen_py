@@ -1,6 +1,6 @@
 [project]
 name = "readscreen"
-version = "0.0.4"
+version = "0.0.5"
 description = "Orchestrator, data layer and frontend for a metagenomic read screening pipeline"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -39,8 +39,9 @@ python main.py results 1                            # per taxon; --references fo
 python main.py export 1 --format tsv -o results.tsv
 ```
 
-Other useful commands: `python main.py stages` (all stage parameters), `jobs set ID STAGE param=value
-[--reset]`, `jobs reset ID STAGE`, `jobs cancel ID`, `jobs delete ID --yes`, `settings`. Everything
+Other useful commands: `python main.py stages` (all stage parameters), `jobs analysis ID` (read
+statistics), `jobs set ID STAGE param=value [--reset]` (e.g. `jobs set 3 trim min_mean_quality=10`),
+`jobs reset ID STAGE`, `jobs cancel ID`, `jobs delete ID --yes`, `settings`. Everything
 also runs with `uv run main.py ...`.
 
 ## Tests

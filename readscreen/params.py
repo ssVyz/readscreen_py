@@ -25,6 +25,12 @@ class Param:
     max: float | None = None
     help: str = ""
     internal: bool = False  # set by readscreen itself, not by the user
+    # presentation only (editors in the web interface):
+    group: str | None = None  # sub-heading the parameter is listed under
+    only: str | None = None  # "short" or "long": only relevant in that read mode
+    # what the tool uses when the parameter is not set (None default): a value, or
+    # {"short": ..., "long": ...}; shown as a placeholder so the effective value is visible
+    tool_default: Any = None
 
     def default_for(self, platform: str | None) -> Any:
         value = self.default(platform) if callable(self.default) else self.default
@@ -130,6 +136,9 @@ def describe(schema: Schema, platform: str | None) -> list[dict]:
             "min": p.min,
             "max": p.max,
             "help": p.help,
+            "group": p.group,
+            "only": p.only,
+            "tool_default": p.tool_default,
         }
         for k, p in schema.items()
         if not p.internal

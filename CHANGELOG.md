@@ -3,6 +3,39 @@
 All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning: [SemVer](https://semver.org/).
 
+## [0.0.5] - 2026-11-06
+
+### Added
+- Trimming mode `trim.mode` (auto, short, long). Auto keeps the previous behaviour: long for nanopore and PacBio,
+  short otherwise. Long mode with paired reads is rejected.
+- simpletrim options as trim parameters instead of extra arguments:
+  - quality filter (base quality, max % low-quality bases, minimum mean read quality);
+  - maximum length;
+  - window size, and window trimming from the right;
+  - fixed front/tail trimming;
+  - adapters: on/off, preset, start/end adapter, chimeric reads;
+  - poly-X tails;
+  - low-quality stretches and their threshold.
+- Parameter schemas carry presentation hints: `group`, `only` (short/long) and `tool_default`. Parameter editors
+  show group headings, hide options of the other read mode, and show the tool's default as the placeholder.
+  `readscreen stages` lists the tool defaults.
+- Read analysis on the job page: full-width card with a statistics table per read file, extra rows (insert size and
+  overlap for pairs, adapters for long reads), and a quality plot along the reads (R1/R2 per cycle, or long reads
+  from either end) with tooltip, keyboard reading and table view.
+  - The same statistics are available with `readscreen jobs analysis ID` (`GET /api/jobs/{id}/analysis`) and are
+    written to the analyze log.
+  - They are read from the stage's `analyze.json`, so existing jobs show them too.
+- `assemble.fragment_overlap` (default 50): overlapping fragments of long reads for the assembler.
+
+### Changed
+- New job page: one card per pipeline step (reads, read check and trimming, assembly, BLAST, hit selection,
+  mapping), each with its main choices, its own "More options" and its pause checkboxes. Trimming shows the mode,
+  minimum mean read quality and minimum length directly; long-read assembly shows the fragment settings.
+- Jobs created by older versions get the defaults of parameters added since (worker and parameter changes).
+
+### Fixed
+- The trim summary of long reads showed no input read count.
+
 ## [0.0.4] - 2026-11-05
 
 ### Added

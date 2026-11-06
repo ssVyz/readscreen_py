@@ -167,7 +167,14 @@ def cmd_stages(api: Api, args) -> int:
         print(f"{st['index']:>2} {st['name']}")
         for p in st["params"]:
             choices = f" [{'|'.join(map(str, p['choices']))}]" if p["choices"] else ""
-            print(f"     {p['name']} ({p['type']}, default {p['default']!r}){choices}: {p['help']}")
+            td = p["tool_default"]
+            if p["default"] is None and td is not None:
+                tool = "/".join(f"{v} {k}" for k, v in td.items()) if isinstance(td, dict) else str(td)
+                default = f"tool default {tool}"
+            else:
+                default = f"default {p['default']!r}"
+            only = f", {p['only']} reads only" if p["only"] else ""
+            print(f"     {p['name']} ({p['type']}, {default}{only}){choices}: {p['help']}")
     return 0
 
 
@@ -311,6 +318,19 @@ def cmd_reassign(api: Api, args) -> int:
 
 def cmd_log(api: Api, args) -> int:
     print(api.stage_log(args.id, args.stage, args.lines))
+    return 0
+
+
+def cmd_analysis(api: Api, args) -> int:
+    from .logic.analysis import text_lines
+
+    print("\n".join(text_lines(api.get_analysis(args.id))))
+    job = api.get_job(args.id)
+    summary = next(s for s in job["stages"] if s["name"] == "analyze")["summary"] or {}
+    for w in summary.get("warnings") or []:
+        print(f"warning: {w}")
+    for s in summary.get("suggestions") or []:
+        print(f"suggestion: {' '.join(map(str, s.get('flags', [])))} ({s.get('reason', '')})")
     return 0
 
 
@@ -490,6 +510,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("stage", choices=STAGE_NAMES)
     p.add_argument("--lines", type=int, default=200)
     p.set_defaults(func=cmd_log)
+    p = jobs.add_parser("analysis", help="show the read statistics of the analyze stage")
+    p.add_argument("id", type=int)
+    p.set_defaults(func=cmd_analysis)
 
     p = sub.add_parser("ranking", help="show the ranked BLAST hits of a job")
     p.add_argument("id", type=int)
